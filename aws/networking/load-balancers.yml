@@ -1,0 +1,95 @@
+Description: This template deploys an Application Load Balancer that exposes our various ECS services. We create them in a separate nested template, so it can be referenced by all of the other nested templates.
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  VPC:
+    Description: Choose which VPC the Application Load Balancer should be deployed to
+    Type: String
+
+  PublicSubnet1:
+    Description: Choose which subnets the Application Load Balancer should be deployed to
+    Type: String
+
+  PublicSubnet2:
+    Description: Choose which subnets the Application Load Balancer should be deployed to
+    Type: String
+
+  SecurityGroup:
+    Description: Select the Security Group to apply to the Application Load Balancer
+    Type: String
+
+  SSLCertificateArn:
+    Description: SSL certificate for validating HTTPS connections
+    Type: String
+
+Resources:
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-LoadBalancer
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref SecurityGroup
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+            Port: '443'
+            Host: '#{host}'
+            Path: '/#{path}'
+            Query: '#{query}'
+
+  HttpsLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref SSLCertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref DefaultTargetGroup
+
+  # We define a default target group here, as this is a mandatory Parameters
+  # when creating an Application Load Balancer Listener. This is not used, instead
+  # a target group is created per-service in each service template (../services/*)
+  DefaultTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-default
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  LoadBalancer:
+    Description: A reference to the Application Load Balancer
+    Value: !Ref LoadBalancer
+
+  LoadBalancerUrl:
+    Description: The URL of the ALB
+    Value: !GetAtt LoadBalancer.DNSName
+
+  LoadBalancerName:
+    Value: !GetAtt LoadBalancer.LoadBalancerName
+
+  CanonicalHostedZoneID:
+    Value: !GetAtt LoadBalancer.CanonicalHostedZoneID
+
+  Listener:
+    Description: A reference to a port 443 HTTPS listener
+    Value: !Ref HttpsLoadBalancerListener

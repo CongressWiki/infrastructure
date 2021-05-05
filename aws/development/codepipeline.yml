@@ -1,0 +1,529 @@
+Description: Create a CodePipeline to include Nested CloudFormation, CodeBuild and Approval steps.
+
+Parameters:
+
+  ArtifactS3Bucket:
+    Type: String
+    Description: Name of the s3 which contains the CFN templates.
+
+  UATApprovalEmail:
+    Type: String
+    Description: Email for UAT notifications.
+
+  ProdApprovalEmail:
+    Type: String
+    Description: Email for Prod notifications.
+
+Resources:
+  # Disabled UAT stage to save money
+  # UATTopic:
+  #   Type: AWS::SNS::Topic
+  #   Properties:
+  #     Subscription:
+  #       - Endpoint:
+  #           Ref: UATApprovalEmail
+  #         Protocol: email
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub UATTopic-${AWS::StackName}
+  #       - Key: Project
+  #         Value: Democracy
+  #       - Key: StackName
+  #         Value: codepipeline
+
+  ProdTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint:
+            Ref: ProdApprovalEmail
+          Protocol: email
+      Tags:
+        - Key: Name
+          Value: !Sub ProdTopic-${AWS::StackName}
+        - Key: Project
+          Value: Democracy
+        - Key: StackName
+          Value: codepipeline
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: CodePipelineRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        -
+          PolicyName: "CodePipelineNestedCFNAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "*"
+                Resource:
+                  - "*"
+
+  CloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: CloudFormationRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "cloudformation.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        -
+          PolicyName: "CloudFormationNestedCFNAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "*"
+                Resource:
+                  - "*"
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: CodeBuildRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "codebuild.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /service-role/
+      Policies:
+        - PolicyName: "CodeBuildNestedCFNAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "*"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:CompleteLayerUpload"
+                  - "ecr:GetAuthorizationToken"
+                  - "ecr:InitiateLayerUpload"
+                  - "ecr:PutImage"
+                  - "ecr:UploadLayerPart"
+                Resource:
+                  - "*"
+
+  BuildCopyCFNProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name:
+        Fn::Sub: BuildCopyCFN-${AWS::StackName}
+      Description: Build to validate and copy CFN templates
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildRole, Arn ]
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:7.0.0
+        EnvironmentVariables:
+          - Name: TEMPLATE_BUCKET
+            Value: !Ref ArtifactS3Bucket
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: aws/development/buildspec.yml
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value: !Sub BuildCopyCFN-${AWS::StackName}
+        - Key: Project
+          Value: Democracy
+        - Key: StackName
+          Value: codepipeline
+
+  BuildGraphqlProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name:
+        Fn::Sub: BuildGraphql-${AWS::StackName}
+      Description: Build for GraphQL server
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildRole, Arn ]
+      Artifacts:
+        Type: S3
+        Location: !Ref ArtifactS3Bucket
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:7.0.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_REPO_NAME
+            Value: democracy-graphql
+          - Name: IMAGE_TAG
+            Value: latest
+          - Name: DOCKER_USERNAME
+            Type: PARAMETER_STORE
+            Value: /docker/DOCKER_USERNAME
+          - Name: DOCKER_PASSWORD
+            Type: PARAMETER_STORE
+            Value: /docker/DOCKER_PASSWORD
+      Source:
+        Type: GITHUB
+        Location: https://github.com/USACounts/graphql.git
+        BuildSpec: buildspec.yml
+      Triggers:
+        Webhook: true
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value: !Sub BuildGraphql-${AWS::StackName}
+        - Key: Project
+          Value: Democracy
+        - Key: StackName
+          Value: codepipeline
+
+  BuildScraperProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub BuildScraper-${AWS::StackName}
+      Description: Build to scrape US government data
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildRole, Arn ]
+      Artifacts:
+        Type: S3
+        Location: !Ref ArtifactS3Bucket
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:7.0.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_REPO_NAME
+            Value: democracy-scraper
+          - Name: IMAGE_TAG
+            Value: latest
+          - Name: DOCKER_USERNAME
+            Type: PARAMETER_STORE
+            Value: /docker/DOCKER_USERNAME
+          - Name: DOCKER_PASSWORD
+            Type: PARAMETER_STORE
+            Value: /docker/DOCKER_PASSWORD
+      Source:
+        Type: GITHUB
+        Location: https://github.com/USACounts/scrapers.git
+        BuildSpec: buildspec.yml
+      Triggers:
+        Webhook: true
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value: !Sub BuildScraper-${AWS::StackName}
+        - Key: Project
+          Value: Democracy
+        - Key: StackName
+          Value: codepipeline
+
+  BuildWebsiteProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub BuildWebsite-${AWS::StackName}
+      Description: Build the website image
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildRole, Arn ]
+      Artifacts:
+        Type: S3
+        Location: !Ref ArtifactS3Bucket
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:7.0.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_REPO_NAME
+            Value: democracy-website
+          - Name: IMAGE_TAG
+            Value: latest
+          - Name: DOCKER_USERNAME
+            Type: PARAMETER_STORE
+            Value: /docker/DOCKER_USERNAME
+          - Name: DOCKER_PASSWORD
+            Type: PARAMETER_STORE
+            Value: /docker/DOCKER_PASSWORD
+      Source:
+        Type: GITHUB
+        Location: https://github.com/USACounts/democracy.git
+        BuildSpec: buildspec.yml
+      Triggers:
+        Webhook: true
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value: !Sub BuildWebsite-${AWS::StackName}
+        - Key: Project
+          Value: Democracy
+        - Key: StackName
+          Value: codepipeline
+
+  DeployPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn:
+          Fn::GetAtt: [ CodePipelineRole, Arn ]
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubRepoDemocracy
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: '1'
+                Provider: CodeStarSourceConnection
+              OutputArtifacts:
+                - Name: CFNTemplateOutput
+              RunOrder: 1
+              Configuration:
+                ConnectionArn: arn:aws:codestar-connections:us-east-1:495634646531:connection/8a78eebb-f883-48c2-b989-05ff42b6db7d
+                FullRepositoryId: "USACounts/infrastructure"
+                BranchName: "main"
+                OutputArtifactFormat: "CODE_ZIP"
+
+        - Name: Validate
+          Actions:
+            - Name: CodeBuildValidate
+              InputArtifacts:
+                - Name: CFNTemplateOutput
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              OutputArtifacts:
+                - Name: CFNTemplateArtifact
+              Configuration:
+                ProjectName:
+                  Ref: BuildCopyCFNProject
+              RunOrder: 1
+
+        - Name: BuildStackTest
+          Actions:
+            - Name: CreateTestStack
+              InputArtifacts:
+                - Name: CFNTemplateArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              OutputArtifacts:
+                - Name: CreatedTestCFNStack
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                RoleArn:
+                  Fn::GetAtt: [ CloudFormationRole, Arn ]
+                Capabilities: CAPABILITY_NAMED_IAM
+                StackName: Test-Democracy
+                TemplateConfiguration: CFNTemplateArtifact::config-test.json
+                TemplatePath: CFNTemplateArtifact::main-stack.yml
+              RunOrder: 1
+
+            - Name: DeleteTestStack
+              InputArtifacts:
+                - Name: CreatedTestCFNStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              OutputArtifacts:
+                - Name: ProceedToUAT
+              Configuration:
+                StackName: Test-Democracy
+                ActionMode: DELETE_ONLY
+                RoleArn:
+                  Fn::GetAtt: [ CloudFormationRole, Arn ]
+              RunOrder: 2
+
+        # Disabled UAT stage to save money
+        # - Name: UAT
+        #   Actions:
+        #     - Name: CreateUATChangeSet
+        #       InputArtifacts:
+        #         - Name: CFNTemplateArtifact
+        #         - Name: ProceedToUAT
+        #       ActionTypeId:
+        #         Category: Deploy
+        #         Owner: AWS
+        #         Version: '1'
+        #         Provider: CloudFormation
+        #       OutputArtifacts:
+        #         - Name: CreatedUATChangeSet
+        #       Configuration:
+        #         ActionMode: CHANGE_SET_REPLACE
+        #         ChangeSetName: UATCBChangeSet
+        #         RoleArn:
+        #           Fn::GetAtt: [ CloudFormationRole, Arn ]
+        #         Capabilities: CAPABILITY_NAMED_IAM
+        #         StackName: UAT-Democracy
+        #         TemplateConfiguration: CFNTemplateArtifact::config-uat.json
+        #         TemplatePath: CFNTemplateArtifact::main-stack.yml
+        #       RunOrder: 1
+
+        #     - Name: ExecuteUATChangeSet
+        #       InputArtifacts:
+        #         - Name: CreatedUATChangeSet
+        #       ActionTypeId:
+        #         Category: Deploy
+        #         Owner: AWS
+        #         Version: '1'
+        #         Provider: CloudFormation
+        #       OutputArtifacts:
+        #         - Name: DeployedUAT
+        #       Configuration:
+        #         ActionMode: CHANGE_SET_EXECUTE
+        #         ChangeSetName: UATCBChangeSet
+        #         StackName:  UAT-Democracy
+        #       RunOrder: 2
+
+        #     - Name: UATApproval
+        #       ActionTypeId:
+        #         Category: Approval
+        #         Owner: AWS
+        #         Version: '1'
+        #         Provider: Manual
+        #       Configuration:
+        #         NotificationArn: !Ref UATTopic
+        #         CustomData: Approve once UAT has been completed.
+        #       RunOrder: 3
+
+        - Name: Production
+          Actions:
+            - Name: CreateProdChangeSet
+              InputArtifacts:
+                - Name: CFNTemplateArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              OutputArtifacts:
+                - Name: CreatedProdChangeSet
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                ChangeSetName: ProdCBChangeSet
+                RoleArn:
+                  Fn::GetAtt: [ CloudFormationRole, Arn ]
+                Capabilities: CAPABILITY_NAMED_IAM
+                StackName: Prod-Democracy
+                TemplateConfiguration: CFNTemplateArtifact::config-prod.json
+                TemplatePath: CFNTemplateArtifact::main-stack.yml
+              RunOrder: 1
+
+            - Name: ProdApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: '1'
+                Provider: Manual
+              Configuration:
+                NotificationArn: !Ref ProdTopic
+                CustomData: Approve deployment in production.
+              RunOrder: 2
+
+            - Name: DeployProduction
+              InputArtifacts:
+                - Name: CreatedProdChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                ChangeSetName: ProdCBChangeSet
+                StackName: Prod-Democracy
+              RunOrder: 3
+
+      ArtifactStore:
+        Type: S3
+        Location:
+          Ref: ArtifactS3Bucket
+
+      Tags:
+        - Key: Name
+          Value: !Sub DeployPipeline-${AWS::StackName}
+        - Key: Project
+          Value: Democracy
+        - Key: StackName
+          Value: codepipeline
+
+Outputs:
+  # Disabled UAT stage to save money
+  # UATTopic:
+  #   Description: The SNS topic for UAT
+  #   Value: !Ref UATTopic
+
+  ProdTopic:
+    Description: The SNS topic for Prod
+    Value: !Ref ProdTopic
+
+  BuildCopyCFNProject:
+    Description: The CodeBuild project for the build, copy, validate of CFN scripts
+    Value: !Ref BuildCopyCFNProject
+
+  BuildGraphqlProject:
+    Description: The CodeBuild project for the GraphQL service
+    Value: !Ref BuildGraphqlProject
+
+  BuildScraperProject:
+    Description: The CodeBuild project for the Scraper service
+    Value: !Ref BuildScraperProject
+
+  BuildWebsiteProject:
+    Description: The CodeBuild project for the Website service
+    Value: !Ref BuildWebsiteProject
+
+  DeployPipeline:
+    Description: The CodePipeline for the Democracy application's infrastructure
+    Value: !Ref DeployPipeline

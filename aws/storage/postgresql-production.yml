@@ -1,0 +1,56 @@
+Description: Create PostgreSQL database Aurora cluster for production instances
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+    AllowedValues: [prod]
+    Default: prod
+
+  DBSubnetGroup:
+    Type: String
+    Description: Enter a valid DB Subnet Group
+
+  DBServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Enter a valid security group ID for database
+
+  DBUsername:
+    Type: String
+    Description: Enter a valid Database master username
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBPassword:
+    Type: String
+    Description: Enter a valid Database master password
+    NoEcho: true
+    MinLength: 1
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9]*'
+
+Resources:
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBClusterIdentifier: !Sub ${EnvironmentName}-DBCluster
+      DatabaseName: postgres
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Engine: aurora-postgresql
+      EngineMode: serverless
+      EngineVersion: '10.12'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      Port: 5432
+      VpcSecurityGroupIds:
+        - !Ref DBServerSecurityGroup
+      # ScalingConfiguration:
+      #   AutoPause: false
+
+Outputs:
+  DBEndpoint:
+      Description: URL endpoint of database
+      Value: !GetAtt DBCluster.Endpoint.Address

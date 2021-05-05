@@ -1,0 +1,125 @@
+Description: This is a long running ECS service that serves scrapes US government websites and sends extracted data to the GraphQL service.
+
+Parameters:
+  Cluster:
+    Description: Please provide the ECS Cluster ID that this service should run on
+    Type: String
+
+  GraphqlEndpoint:
+    Description: The url of the GraphQL server
+    Type: String
+
+  EFS:
+    Description: The Elastic file storage to associate with this task definition
+    Type: String
+
+  PrivateSubnet1:
+    Description: A private subnets
+    Type: String
+
+  PrivateSubnet2:
+    Description: A private subnets
+    Type: String
+
+  ECSHostSecurityGroup:
+    Description: Select the Security Group to use for the ECS cluster hosts
+    Type: AWS::EC2::SecurityGroup::Id
+
+Resources:
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetAuthorizationToken
+                  - ecr:GetDownloadUrlForLayer
+                  - kms:Decrypt
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+        - PolicyName: !Sub ${AWS::StackName}-secret-parameters
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/democracy/hasura/prod/admin-secret
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref ECSHostSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      Volumes:
+        - Name: us-government-data
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFS
+      ContainerDefinitions:
+        - Name: scraper-service
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/democracy-scraper:latest
+          Cpu: 256
+          Memory: 512
+          MountPoints:
+            - ContainerPath: /build/us-government-data
+              SourceVolume: us-government-data
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: Democracy-Graphql
+          Secrets:
+            - Name: HASURA_GRAPHQL_ADMIN_SECRET
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/democracy/hasura/prod/admin-secret
+          Environment:
+            - Name: GRAPHQL_ENDPOINT
+              Value: !Ref GraphqlEndpoint
+
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref AWS::StackName
+      RetentionInDays: 365
+
+Outputs:
+  ScraperServiceTask:
+    Value: !Ref TaskDefinition

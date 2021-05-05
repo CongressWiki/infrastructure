@@ -1,0 +1,17 @@
+{
+  "Parameters": {
+    "EnvironmentName": "",
+    "VPC": "",
+    "PrivateSubnet1": "",
+    "PrivateSubnet2": "",
+    "PublicSubnet1": "",
+    "PublicSubnet2": "",
+    "LoadBalancerSecurityGroup": "",
+    "ECSHostSecurityGroup": "",
+    "DBUsername": "",
+    "DBPassword": "",
+    "ScraperEFSFileSystem": "",
+    "PostgresDatabaseEndpoint": "",
+    "SSLCertificateArn": ""
+  }
+}

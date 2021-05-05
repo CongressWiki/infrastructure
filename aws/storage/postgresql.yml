@@ -1,0 +1,59 @@
+Description: Create PostgreSQL database Aurora cluster
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Select the appropriate environment
+    AllowedValues:
+      - dev
+      - test
+      - uat
+
+  DBSubnetGroup:
+    Type: String
+    Description: Enter a valid DB Subnet Group
+
+  DBServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Enter a valid security group ID for database
+
+  DBUsername:
+    Type: String
+    Description: Enter a valid Database master username
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBPassword:
+    Type: String
+    Description: Enter a valid Database master password
+    NoEcho: true
+    MinLength: 1
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9]*'
+
+Resources:
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBClusterIdentifier: !Sub ${EnvironmentName}-DBCluster
+      DatabaseName: postgres
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Engine: 'aurora-postgresql'
+      EngineMode: serverless
+      # [supported serverless versions](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraFeaturesRegionsDBEngines.grids.html#Concepts.Aurora_Fea_Regions_DB-eng.Feature.Serverless)
+      EngineVersion: '10.12'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      Port: 5432
+      VpcSecurityGroupIds:
+        - !Ref DBServerSecurityGroup
+      ScalingConfiguration:
+        AutoPause: true
+
+Outputs:
+  DBEndpoint:
+    Description: URL endpoint of database
+    Value: !GetAtt DBCluster.Endpoint.Address

@@ -1,0 +1,94 @@
+Description: This template is used to provision the data related resources.
+
+Parameters:
+  EnvironmentName:
+    Description: Name used to identify the purpose of the stack resource. Use "prod" to build production specific resources.
+    Type: String
+
+  PrivateSubnet1:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Type: String
+
+  PrivateSubnet2:
+    Description: A reference to the private subnet in the 2nd Availability Zone
+    Type: String
+
+  DBSubnetGroup:
+    Description: Name of the DB Subnet group
+    Type: String
+
+  DBServerSecurityGroup:
+    Description: Database server security group
+    Type: String
+
+  EFSSecurityGroup:
+    Description: EFS security group
+    Type: String
+
+  DBUsername:
+    Type: String
+    Description: Enter a valid Database master username
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBPassword:
+    Type: String
+    Description: Enter a valid Database master password
+    NoEcho: true
+    MinLength: 1
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9]*'
+
+Conditions:
+  isProduction: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  ScraperEFS:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/storage/efs.yml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        ServiceName: scraper
+        EFSSecurityGroup: !Ref EFSSecurityGroup
+        PrivateSubnet1: !Ref PrivateSubnet1
+        PrivateSubnet2: !Ref PrivateSubnet2
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Stack-Name
+          Value: ScraperEFS
+
+  PostgresDatabaseCluster:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::If:
+          - isProduction
+          - https://s3.amazonaws.com/democracy-stack/aws/storage/postgresql-production.yml
+          - https://s3.amazonaws.com/democracy-stack/aws/storage/postgresql.yml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        DBSubnetGroup: !Ref DBSubnetGroup
+        DBServerSecurityGroup: !Ref DBServerSecurityGroup
+        DBUsername: !Ref DBUsername
+        DBPassword: !Ref DBPassword
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Stack-Name
+          Value: PostgresDatabaseCluster
+
+Outputs:
+  ScraperEFSFileSystem:
+    Description: The EFS for the Scraper service
+    Value: !GetAtt ScraperEFS.Outputs.EfsFileSystem
+
+  PostgresDatabaseEndpoint:
+    Description: The Postgres Database for the GraphQL service
+    Value: !GetAtt PostgresDatabaseCluster.Outputs.DBEndpoint

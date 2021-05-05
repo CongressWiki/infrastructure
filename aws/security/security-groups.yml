@@ -1,0 +1,116 @@
+Description: This template contains the security groups required by our entire stack. We create them in a seperate nested template, so they can be referenced by all of the other nested templates.
+
+Parameters:
+  ProjectName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+    Default: Democracy
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Choose which VPC the security groups should be deployed to
+
+Resources:
+  # This security group defines who/where is allowed to access the ECS hosts directly.
+  # By default we're just allowing access from the load balancer.  If you want to SSH
+  # into the hosts, or expose non-load balanced services you can open their ports here.
+  ECSHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the ECS hosts and the tasks/containers that run on them
+      SecurityGroupIngress:
+        # Only allow inbound access to ECS from the ELB
+        - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          IpProtocol: '-1'
+        - FromPort: 80
+          ToPort: 80
+          IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        - FromPort: 8080
+          ToPort: 8080
+          IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        - FromPort: 3000
+          ToPort: 3000
+          IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ECSHostSecurityGroup
+      VpcId: !Ref VPC
+
+  # This security group defines who/where is allowed to access the Application Load Balancer.
+  # By default, we've opened this up to the public internet (0.0.0.0/0) but can you restrict
+  # it further if you want.
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the load balancer that sits in front of ECS
+      SecurityGroupIngress:
+        # Allow access from anywhere to our ECS services
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: '-1'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-LoadBalancerSecurityGroup
+      VpcId: !Ref VPC
+
+  DBClientSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Database client security group
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-DBClientSecurityGroup
+      VpcId: !Ref VPC
+
+  DBServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Database server security group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ECSHostSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-DBServerSecurityGroup
+      VpcId: !Ref VPC
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS Security Group
+      GroupName: !Sub ${AWS::StackName}
+      SecurityGroupIngress:
+        - Description: Allow traffic for EFS
+          IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-EFSSecurityGroup
+      VpcId: !Ref VPC
+
+Outputs:
+  ECSHostSecurityGroup:
+    Description: A reference to the security group for ECS hosts
+    Value: !Ref ECSHostSecurityGroup
+
+  LoadBalancerSecurityGroup:
+    Description: A reference to the security group for load balancers
+    Value: !Ref LoadBalancerSecurityGroup
+
+  DBClientSecurityGroup:
+    Description: Database client security group
+    Value: !Ref DBClientSecurityGroup
+
+  DBServerSecurityGroup:
+    Description: Database server security group
+    Value: !Ref DBServerSecurityGroup
+
+  EFSSecurityGroup:
+    Description: EFS security group
+    Value: !Ref EFSSecurityGroup

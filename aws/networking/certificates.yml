@@ -1,0 +1,40 @@
+Description: This template deploys an ECS cluster to the provided VPC and subnets using an Auto Scaling Group
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  LoadBalancerUrl:
+    Description: Application load balancer DNS name
+    Type: String
+
+  CanonicalHostedZoneID:
+    Description: Application Load Balancer CanonicalHostedZoneID
+    Type: String
+
+  DomainName:
+    Description: The DNS name of an existing Amazon Route 53 hosted zone e.g. usacounts.com
+    Type: String
+    Default: usacounts.com
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: must be a valid DNS zone name.
+
+Resources:
+  WebsiteRecordSet:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub ${DomainName}.
+      RecordSets:
+        - Name: !Sub ${EnvironmentName}.${DomainName}
+          Type: CNAME
+          TTL: '300'
+          ResourceRecords:
+            - !Ref LoadBalancerUrl
+
+Outputs:
+  WebsiteUrl:
+    Description: WebsiteRecordSet URL
+    Value: !Sub https://${EnvironmentName}.${DomainName}
+    Export:
+      Name: !Sub ${AWS::StackName}-WebsiteRecordSet

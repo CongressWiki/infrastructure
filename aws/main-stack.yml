@@ -1,0 +1,190 @@
+Description: This template is used to provision the compute related resources.
+
+Parameters:
+  EnvironmentName:
+    Description: Name used to identify the purpose of the stack resource. Use "prod" to build production specific resources.
+    Type: String
+
+  VPC:
+    Description: A reference to the created VPC
+    Type: String
+
+  PrivateSubnet1:
+    Description: A private subnets
+    Type: String
+
+  PrivateSubnet2:
+    Description: A private subnets
+    Type: String
+
+  PublicSubnet1:
+    Description: A public subnets
+    Type: String
+
+  PublicSubnet2:
+    Description: A public subnets
+    Type: String
+
+  ECSHostSecurityGroup:
+    Description: A reference to the security group for ECS hosts
+    Type: String
+
+  LoadBalancerSecurityGroup:
+    Description: A reference to the security group for load balancers
+    Type: String
+
+  PostgresDatabaseEndpoint:
+    Type: String
+
+  DBUsername:
+    Type: String
+    Description: Enter a valid Database master username
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBPassword:
+    Type: String
+    Description: Enter a valid Database master password
+    NoEcho: true
+    MinLength: 1
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9]*'
+
+  ScraperEFSFileSystem:
+    Type: String
+
+  SSLCertificateArn:
+    Description: SSL certificate for validating https connections.
+    Type: String
+
+Conditions:
+  isProduction: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  ALB:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/networking/load-balancers.yml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VPC: !Ref VPC
+        PublicSubnet1: !Ref PublicSubnet1
+        PublicSubnet2: !Ref PublicSubnet2
+        SecurityGroup: !Ref LoadBalancerSecurityGroup
+        SSLCertificateArn: !Ref SSLCertificateArn
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Stack-Name
+          Value: ALB
+
+  ECS:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/compute/ecs-cluster.yml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Stack-Name
+          Value: ECS
+
+  Certificates:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::If:
+          - isProduction
+          - https://s3.amazonaws.com/democracy-stack/aws/networking/production-certificates.yml
+          - https://s3.amazonaws.com/democracy-stack/aws/networking/certificates.yml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        LoadBalancerUrl: !GetAtt ALB.Outputs.LoadBalancerUrl
+        CanonicalHostedZoneID: !GetAtt ALB.Outputs.CanonicalHostedZoneID
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Stack-Name
+          Value: Certificates
+
+  GraphqlService:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/services/graphql-service/service.yml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VPC: !Ref VPC
+        Cluster: !GetAtt  ECS.Outputs.Cluster
+        Listener: !GetAtt ALB.Outputs.Listener
+        ECSServiceAutoScalingRoleARN: !GetAtt ECS.Outputs.ECSServiceAutoScalingRole
+        DBEndpoint: !Ref PostgresDatabaseEndpoint
+        DBUsername: !Ref DBUsername
+        DBPassword: !Ref DBPassword
+        PrivateSubnet1: !Ref PrivateSubnet1
+        PrivateSubnet2: !Ref PrivateSubnet2
+        ECSHostSecurityGroup: !Ref ECSHostSecurityGroup
+        GraphqlEndpoint: !GetAtt Certificates.Outputs.WebsiteUrl
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Stack-Name
+          Value: GraphqlService
+
+  # ScraperService:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/services/scraper-service/service.yml
+  #     Parameters:
+  #       Cluster: !GetAtt  ECS.Outputs.Cluster
+  #       EFS: !Ref ScraperEFSFileSystem
+  #       GraphqlEndpoint: !GetAtt Certificates.Outputs.WebsiteUrl
+  #       PrivateSubnet1: !Ref PrivateSubnet1
+  #       PrivateSubnet2: !Ref PrivateSubnet2
+  #       ECSHostSecurityGroup: !Ref ECSHostSecurityGroup
+  #     Tags:
+  #       - Key: Project
+  #         Value: Democracy
+  #       - Key: Environment
+  #         Value: !Ref EnvironmentName
+  #       - Key: Stack-Name
+  #         Value: ScraperService
+
+  # WebsiteService:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/services/website-service/service.yml
+  #     Parameters:
+  #       EnvironmentName: !Ref EnvironmentName
+  #       VPC: !Ref VPC
+  #       Cluster: !GetAtt ECS.Outputs.Cluster
+  #       GraphqlEndpoint: !GetAtt Certificates.Outputs.WebsiteUrl
+  #       Listener: !GetAtt ALB.Outputs.Listener
+  #       ECSServiceAutoScalingRoleARN: !GetAtt ECS.Outputs.ECSServiceAutoScalingRole
+  #       PrivateSubnet1: !Ref PrivateSubnet1
+  #       PrivateSubnet2: !Ref PrivateSubnet2
+  #       ECSHostSecurityGroup: !Ref ECSHostSecurityGroup
+  #     Tags:
+  #       - Key: Project
+  #         Value: Democracy
+  #       - Key: Environment
+  #         Value: !Ref EnvironmentName
+  #       - Key: Stack-Name
+  #         Value: WebsiteService
+
+Outputs:
+  WebsiteUrl:
+    Value: !GetAtt Certificates.Outputs.WebsiteUrl
+
+  GraphqlServiceUrl:
+    Description: The URL endpoint for the graphql service
+    Value: !Join ["/", [!GetAtt Certificates.Outputs.WebsiteUrl, "console"]]

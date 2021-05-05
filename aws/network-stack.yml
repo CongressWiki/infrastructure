@@ -1,0 +1,101 @@
+Description: This template is used to provision the network related resources.
+
+Parameters:
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.180.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.180.8.0/21
+
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.180.16.0/21
+
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.180.24.0/21
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.180.32.0/21
+
+Resources:
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/networking/vpc.yml
+      Parameters:
+        VpcCIDR: !Ref VpcCIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+        PrivateSubnet1CIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2CIDR: !Ref PrivateSubnet2CIDR
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Stack-Name
+          Value: VPC
+
+  SecurityGroups:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/democracy-stack/aws/security/security-groups.yml
+      Parameters:
+        VPC: !GetAtt VPC.Outputs.VPC
+      Tags:
+        - Key: Project
+          Value: Democracy
+        - Key: Stack-Name
+          Value: SecurityGroups
+
+Outputs:
+  VPC:
+    Description: A reference to the created VPC
+    Value: !GetAtt VPC.Outputs.VPC
+
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !GetAtt VPC.Outputs.PublicSubnet1
+
+  PublicSubnet2:
+    Description: A reference to the public subnet in the 2nd Availability Zone
+    Value: !GetAtt VPC.Outputs.PublicSubnet2
+
+  PrivateSubnet1:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Value: !GetAtt VPC.Outputs.PrivateSubnet1
+
+  PrivateSubnet2:
+    Description: A reference to the private subnet in the 2nd Availability Zone
+    Value: !GetAtt VPC.Outputs.PrivateSubnet2
+
+  DBSubnetGroup:
+    Description: Name of the DB Subnet group
+    Value: !GetAtt VPC.Outputs.DBSubnetGroup
+
+  ECSHostSecurityGroup:
+    Description: A reference to the security group for ECS hosts
+    Value: !GetAtt SecurityGroups.Outputs.ECSHostSecurityGroup
+
+  LoadBalancerSecurityGroup:
+    Description: A reference to the security group for load balancers
+    Value: !GetAtt SecurityGroups.Outputs.LoadBalancerSecurityGroup
+
+  DBClientSecurityGroup:
+    Description: Database client security group
+    Value: !GetAtt SecurityGroups.Outputs.DBClientSecurityGroup
+
+  DBServerSecurityGroup:
+    Description: Database server security group
+    Value: !GetAtt SecurityGroups.Outputs.DBServerSecurityGroup
+
+  EFSSecurityGroup:
+    Description: EFS security group
+    Value: !GetAtt SecurityGroups.Outputs.EFSSecurityGroup

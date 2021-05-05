@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: AWS CFN Script that creates an EFS
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  ServiceName:
+    Description: The name of the service that will be prefixed to resource names
+    Type: String
+
+  EFSSecurityGroup:
+    Description: Enter a valid security group ID for EFS
+    Type: String
+
+  PrivateSubnet1:
+    Type: String
+
+  PrivateSubnet2:
+    Type: String
+
+Resources:
+  EfsFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-${ServiceName}-EfsFileSystem
+      Encrypted: true
+      PerformanceMode: generalPurpose
+
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+Outputs:
+  EfsFileSystem:
+    Description: EfsFileSystem
+    Value: !Ref EfsFileSystem
+
+  MountTarget1:
+    Description: MountTarget1
+    Value: !Ref MountTarget1
+
+  MountTarget2:
+    Description: MountTarget2
+    Value: !Ref MountTarget2
