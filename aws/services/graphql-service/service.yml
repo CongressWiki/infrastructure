@@ -14,11 +14,11 @@ Parameters:
     Type: String
 
   PrivateSubnet1:
-    Description: A private subnets
+    Description: A private subnet
     Type: String
 
   PrivateSubnet2:
-    Description: A private subnets
+    Description: A private subnet
     Type: String
 
   ECSHostSecurityGroup:
@@ -205,6 +205,7 @@ Resources:
           Values:
             - /console
             - /console/*
+            - /v2/*
             - /v1/*
             - /v1alpha1/*
       Actions:

@@ -10,19 +10,19 @@ Parameters:
     Type: String
 
   PrivateSubnet1:
-    Description: A private subnets
+    Description: A private subnet to the first AZ
     Type: String
 
   PrivateSubnet2:
-    Description: A private subnets
+    Description: A private subnet to the second AZ
     Type: String
 
   PublicSubnet1:
-    Description: A public subnets
+    Description: A public subnet to the first AZ
     Type: String
 
   PublicSubnet2:
-    Description: A public subnets
+    Description: A public subnet to the second AZ
     Type: String
 
   ECSHostSecurityGroup:
